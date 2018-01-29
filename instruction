@@ -35,7 +35,7 @@ sudo su - hydroapp
 id
 cd /var/tethys_deploy
 wget https://raw.githubusercontent.com/tethysplatform/tethys/release/scripts/install_tethys.sh
-bash install_tethys.sh -b release --tethys-home /var/tethys_deploy
+bash install_tethys.sh -b release --tethys-home /var/tethys_deploy/tethys
 
 . ~/bashrch
 t
@@ -47,18 +47,19 @@ tms
 conda install -c conda-forge uwsgi
 mkdir -p /var/tethys_deploy/tethys/uwsgi/logs
 
-nano /var/tethys_deploy/tethys/tethys_portal/settings.py
-allowed_hosts=["127.0.0.1"]
+nano /var/tethys_deploy/tethys/src/tethys_portal/settings.py
+allowed_hosts=["hs-apps-dev.hydroshare.org", "127.0.0.1"]
 generate new django secret
 DEBUG=False
 uncomment static dir
 uncomment workspace
-python manage.py collectstatics
+cd /var/tethys_deploy/tethys/src
+python manage.py collectstatic
 
 # test -- manually run uwsgi on the backend
 uwsgi --chdir=/var/tethys_deploy/tethys/src/tethys_portal \
     --home=/var/tethys_deploy/tethys/miniconda/envs/tethys \
-    --module=wsgi \    
+    --module=wsgi \
     --master \
     --pidfile=/var/tethys_deploy/tethys/uwsgi/tethys-uwsgi-master.pid \
     --socket=/var/tethys_deploy/tethys/uwsgi/nginx-uwsgi.socket \
@@ -69,7 +70,7 @@ uwsgi --chdir=/var/tethys_deploy/tethys/src/tethys_portal \
     --harakiri=20 \
     --max-requests=5000 \
     --vacuum \
-    --chmod-socket \    
+    --chmod-socket \
     --daemonize=/var/tethys_deploy/tethys/uwsgi/logs/uwsgi.log
 # try opening site in text browser
 lynx 127.0.0.1:49153
@@ -81,9 +82,10 @@ pkill -f uwsgi -9
 
 
 # setup nginx
+exit
 sudo yum install nginx
 sudo nano /etc/nginx/conf.d/tethys_nginx.conf
-
+# replace !!! with your domain
 # tethys_nginx.conf
 # the upstream component nginx needs to connect to
 upstream django {    
@@ -95,11 +97,11 @@ server {
     # the port your site will be served on
     listen      80;
     # the domain name it will serve for
-    server_name hs-apps-dev.hydroshare.org; # substitute your machine's IP address or FQDN
+    server_name !!!hs-apps-dev.hydroshare.org!!!; # substitute your machine's IP address or FQDN
     charset     utf-8;
 
     # max upload size
-    client_max_body_size 75M;   # adjust to taste
+    client_max_body_size 2048M;   # adjust to taste
 
     # Tethys Workspaces
     location /workspaces  {
@@ -127,19 +129,31 @@ sudo service iptables restart
 sudo service docker restart
 sudo iptables -L
 
-# In tethys mode
-nano /var/tethys_deploy/tethys/tethys_portal/settings.py
-allowed_hosts=["hs-apps-dev.hydroshare.org", "127.0.0.1"]
 
-
-#manually start uwsgi and nginx
+# manually start uwsgi and nginx
+# in tethys mode
 uwsgi ...(see above)
+# in non-tethys mode
 sudo service nginx restart
 try to access hs-apps-dev.hydroshare.org in browser
 
+# install postgis container (replace miniconda postgres)
+# start tethys mode
+# stop uwsgi
+tethys docker init -c postgis
+# nano settings to change db port (5435) and user (tethys_default)
+sudo nano /var/tethys_deploy/tethys/src/tethys_portal/settings.py
+docker ps
+tethys docker start tethys_postgis
+# restart uwsgi
+python manage.py migrate
+python manage.py createsuperuser
+
+
+# auto start everything on boot (nginx, uwsgi, docker containers)
 # supervisord (manage uwsgi and nginx)
 sudo yum install supervisor
-sudo nano /etc/supervisord/tethys.ini
+sudo nano /etc/supervisord.d/tethys.ini
 
 [program:uwsgi]
 command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && uwsgi --chdir=/var/tethys_deploy/tethys/src/tethys_portal --module=wsgi --home /var/tethys_deploy/tethys/miniconda/envs/tethys --master --pidfile=/var/tethys_deploy/tethys/uwsgi/tethys-uwsgi-master.pid --socket=/var/tethys_deploy/tethys/uwsgi/nginx-uwsgi.socket --http=127.0.0.1:49153 --processes=5 --uid=20025 --gid=10000 --harakiri=20 --max-requests=5000 --vacuum  --chmod-socket --logger file:logfile=/var/tethys_deploy/tethys/uwsgi/logs/uwsgi.log,maxsize=10000000"
@@ -160,25 +174,17 @@ startsecs=10
 redirect_stderr=false
 
 # stop uwsgi and nginx and start supervisord
-
 sudo service supervisord start
 Try to access hs-apps-dev.hydroshare.org
 
 # set supervisord to start on boot
 sudo service supervisord stop
 
-sudo chkconfig supervisord on
-systemctl status supervisord
-systemctl start supervisord
-systemctl enable supervisord
+(sudo chkconfig supervisord on)
+sudo systemctl status supervisord
+sudo systemctl start supervisord
+sudo systemctl enable supervisord
 
-
-# install postgis container (replace miniconda postgres)
-# tethys mode
-tethys docker -c postgis init
-nano settings to change db port and user
-docker ps
-docker start tethys_postgis
 
 # set tethys contianer postgis to start on boot
 # make sure docker service auto start on boot
@@ -186,7 +192,6 @@ sudo systemctl enable docker.service
 sudo systemctl status docker.service
 
 sudo nano /etc/systemd/system/tethys_docker_postgis.service
-
 [Unit]
 Wants=docker.service
 After=docker.service
@@ -199,13 +204,14 @@ ExecStop=/usr/bin/docker stop tethys_postgis
 [Install]
 WantedBy=multi-user.target
 
-
+docker stop tethys_postgis
 sudo systemctl start tethys_docker_postgis.service
 sudo systemctl enable tethys_docker_postgis.service
 sudo systemctl status tethys_docker_postgis.service
 
 
-# enable https and secure side
+# enable HTTPS and secure side
+# replace !!! with your domain
 sudo nano /etc/nginx/conf.d/tethys_nginx.conf
 
 # the upstream component nginx needs to connect to
@@ -217,7 +223,7 @@ upstream django {
 # configuration of the server
 server {
     listen          80;
-    server_name     hs-apps-dev.hydroshare.org;
+    server_name     !!!hs-apps-dev.hydroshare.org!!!;
     return          301 https://$server_name$request_uri;
 }
 
@@ -225,11 +231,11 @@ server {
     # the port your site will be served on
     listen      443 ssl;
     # the domain name it will serve for
-    server_name hs-apps-dev.hydroshare.org; # substitute your machine's IP address or FQDN
+    server_name !!!hs-apps-dev.hydroshare.org!!!; # substitute your machine's IP address or FQDN
     charset     utf-8;
 
     # max upload size
-    client_max_body_size 75M;   # adjust to taste
+    client_max_body_size 2048M;   # adjust to taste
     
     ssl on;
     ssl_certificate         /opt/hs-certs/server.crt;
@@ -276,10 +282,11 @@ server {
 
 # register new app at www.hydroshare.org/o/applications
 # get app_key and app_secret
-
+nano /var/tethys_deploy/tethys/src/tethys_portal/settings.py
 settings.py
 'tethys_services.backends.hydroshare.HydroShareOAuth2',
 
 ## HydroShare
 SOCIAL_AUTH_HYDROSHARE_KEY = '*******'
-SOCIAL_AUTH_HYDROSHARE_SECRET = '**********'
+SOCIAL_AUTH_HYDROSHARE_SECRET = '***********************'
+
