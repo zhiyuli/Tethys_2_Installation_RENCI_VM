@@ -120,7 +120,7 @@ redirect_stderr=true
 priority=1001
 
 [program:flower]
-command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && celery flower -A tethys_portal --url_prefix=flower --basic_auth=admin:HydroShare --xheaders=True"
+command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && celery flower -A tethys_portal --url_prefix=flower --basic_auth=admin:pass --xheaders=True"
 user=hydroapp
 stdout_logfile=/var/tethys_deploy/logs/flower_error.log
 redirect_stderr=true
