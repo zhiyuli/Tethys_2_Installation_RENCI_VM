@@ -1,0 +1,150 @@
+Celery -- conda, supervisord
+Flower -- conda, supervisord
+django-celery-results pip
+django-celery-beat pip
+rabbitmq-server yum, systemctl service
+
+
+#Setup celery + rabbitmq-server
+
+conda install -c conda-forge celery flower
+pip install django-celery-results django-celery-beat
+cd /var/tethys_deploy/tethys/src/tethys_portal
+nano tethys_celery.py
+
+from __future__ import absolute_import, unicode_literals
+import os
+from celery import Celery
+from celery import shared_task
+
+# set the default Django settings module for the 'celery' program.
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tethys_portal.settings')
+
+app = Celery('tethys_celery')
+
+# Using a string here means the worker doesn't have to serialize
+# the configuration object to child processes.
+# - namespace='CELERY' means all celery-related configuration keys
+#   should have a `CELERY_` prefix.
+
+## celery 4.1
+app.config_from_object('django.conf:settings', namespace='CELERY')
+
+# Set result db record's life span (in seconds).
+# See: https://github.com/celery/celery/issues/4050
+# This setting can be checked by  
+#  from tethys_portal import tethys_celery
+#  tethys_celery.app.conf["result_expires"]
+# and will be used in Celery at 
+# https://github.com/celery/celery/blob/master/celery/backends/base.py#L284
+app.conf.result_expires = 30 * 24 * 3600  # 30 days 
+
+# Load task modules from all registered Django app configs.
+app.autodiscover_tasks()
+
+
+@app.task(bind=True)
+def debug_task(self):
+    print('Request: {0!r}'.format(self.request))
+
+
+@shared_task
+def add(x, y):
+    return x + y
+
+
+@shared_task
+def mul(x, y):
+    return x * y
+
+
+@shared_task
+def xsum(numbers):
+    return sum(numbers)
+
+    
+nano __init__.py
+
+from __future__ import absolute_import, unicode_literals
+
+# This will make sure the app is always imported when
+# Django starts so that shared_task will use this app.
+from .tethys_celery import app as celery_app
+
+__all__ = ['celery_app']
+
+nano settings.py
+# add new apps
+    'django_celery_results',
+    'django_celery_beat',
+
+# Celery settings
+BROKER_URL = 'amqp://myuser:mypassword@localhost:5672/myvhost'
+CELERY_RESULT_BACKEND = 'django-db'
+# See issue: https://github.com/celery/celery/issues/4050
+#result_expires = 3600 * 24 * 10    # Set result db record's life span to 10 days (in seconds). This setting does not work. A workaround is set in tethys_portal/tethys_celery.py
+CELERY_TRACK_STARTED = True  # report "job started" status
+
+python manage.py migrate
+python manage.py collectstatic
+
+yum install rabbitmq-server
+systemctl start rabbitmq-server
+systemctl enable rabbitmq-server (start on boot)
+
+
+# add new entities to supervisord
+mkdir /var/tethys_deploy/logs
+
+nano /etc/supervisord.d/tethys.ini
+
+[program:tethys_celery]
+command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && celery -A tethys_portal.tethys_celery:app worker --loglevel=DEBUG --concurrency 2 -E"
+#environment=PATH="/var/tethys_deploy/tethys/miniconda/envs/tethys/bin/:%(ENV_PATH)s"
+user=hydroapp
+autostart=true
+autorestart=true
+redirect_stderr=true
+stdout_logfile=/var/tethys_deploy/logs/celery_error.log
+priority=800
+
+[program:celery-beat]
+command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && celery beat -A tethys_portal --loglevel=DEBUG --scheduler django_celery_beat.schedulers:DatabaseScheduler --pidfile='/var/tethys_deploy/celerybeat.pid'"
+user=hydroapp
+; see: https://stackoverflow.com/questions/9034709/incorrect-user-for-supervisord-celeryd
+environment=HOME="/home/hydroapp",USER="hydroapp"
+autorestart=true
+autostart=true
+stdout_logfile=/var/tethys_deploy/logs/celery_beat_error.log
+redirect_stderr=true
+priority=1001
+
+[program:flower]
+command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && celery flower -A tethys_portal --url_prefix=flower --basic_auth=admin:HydroShare --xheaders=True"
+user=hydroapp
+stdout_logfile=/var/tethys_deploy/logs/flower_error.log
+redirect_stderr=true
+autostart=true
+autorestart=true
+priority=1002
+
+
+#[program:rabbitmq-server]
+#command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && rabbitmq-server"
+#environment=HOME="/home/hydroapp",RABBITMQ_LOG_BASE="/var/tethys_deploy/logs",USER="hydroapp",RABBITMQ_NODE_IP_ADDRESS="127.0.0.1",RABBITMQ_NODENAME="tethys-rabbit"
+#user=hydroapp
+#autostart=true
+#autorestart=true
+#redirect_stderr=true
+#stdout_logfile=/var/tethys_deploy/logs/rabbitmq_error.log
+
+
+# add new url mapping to nignx for flower
+sudo nano /etc/nignx/
+    # flower
+    location /flower/ {
+        rewrite ^/flower/(.*)$ /$1 break;
+        proxy_pass http://127.0.0.1:5555;
+        proxy_redirect off;
+    }
+
