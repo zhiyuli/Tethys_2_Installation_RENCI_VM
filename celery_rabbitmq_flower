@@ -91,7 +91,8 @@ python manage.py collectstatic
 yum install rabbitmq-server
 systemctl start rabbitmq-server
 systemctl enable rabbitmq-server (start on boot)
-
+# enable rabbitmq management plugin (port 15672)
+rabbitmq-plugins enable rabbitmq_management
 
 # add new entities to supervisord
 mkdir /var/tethys_deploy/logs
@@ -128,7 +129,7 @@ autostart=true
 autorestart=true
 priority=1002
 
-
+## not being used
 #[program:rabbitmq-server]
 #command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && rabbitmq-server"
 #environment=HOME="/home/hydroapp",RABBITMQ_LOG_BASE="/var/tethys_deploy/logs",USER="hydroapp",RABBITMQ_NODE_IP_ADDRESS="127.0.0.1",RABBITMQ_NODENAME="tethys-rabbit"
@@ -143,17 +144,41 @@ priority=1002
 sudo nano /etc/nignx/
     # flower
     location /flower/ {
+        # see: http://flower.readthedocs.io/en/latest/config.html#url-prefix
         rewrite ^/flower/(.*)$ /$1 break;
         proxy_pass http://127.0.0.1:5555;
-        proxy_redirect off;
+        proxy_set_header Host $host;
+        #proxy_redirect off;
     }
     
-    # rabbitmq UI
+    # rabbitmq management plugin (UI)
     # http://blog.jamesball.co.uk/2015/08/using-nginxapache-as-reverse-proxy-for.html
     location /rabbitmq/ {
       if ($request_uri ~* "/rabbitmq/(.*)") {
         proxy_pass http://127.0.0.1:15672/$1;
       }
       proxy_pass http://127.0.0.1:15672;
-   }
+   }   
+   
+Goto /rabbitmq --> login with guest/guest --> create a new user with "admintrator" tag --> log out and log in with new user --> remove "administrator" tag from guest user.
 
+# Set up nginx HTTP basic authentication 
+# Optionl, 
+# having issue with existing authentication used by flower and rabbitmq management plugin
+# flower (port 5555) and rabbitmq management plugin (port 15672) already use HTTP basic authentication to encode and transder their username and password.
+# having another layer of HTTP basic authentication on nginx causes troubles since the 1st part  of "client ---> ngnix ---> flower/rabbitmq-plugin" needs to encode
+# nginx level user/passwork in HTTP header to authenticate against nginx, and the 2nd part needs to encode user/pass of flower/rabbitmq-plugin level to authenticate against flower/rabbit.
+# but the first part's http header is passed over to the second part during the proxy process
+# it is possible to set flower NOT to set flower-level user/apass and just use nginx-level auth
+# but for rabbit it is impossible as rabbit-level user/pass is required.
+sudo yum install -y httpd-tools
+sudo htpasswd -c /etc/nginx/.htpasswd user1
+cat /etc/nginx/.htpasswd
+
+nano /etc/nginx/conf.d/tethys_nginx.conf
+
+location /ssss/{
+auth_basic "Admin Privilege Required";
+auth_basic_user_file /etc/nginx/.htpasswd;
+****
+} 
