@@ -48,11 +48,59 @@ conda install -c conda-forge uwsgi
 mkdir -p /var/tethys_deploy/tethys/uwsgi/logs
 
 nano /var/tethys_deploy/tethys/src/tethys_portal/settings.py
-allowed_hosts=["hs-apps-dev.hydroshare.org", "127.0.0.1"]
+allowed_hosts=["hs-apps-dev.hydroshare.org", "127.0.0.1", "<SERVER REAL IP>"]
 generate new django secret
 DEBUG=False
 uncomment static dir
 uncomment workspace
+
+#change logging settting:
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': "[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] %(message)s",
+            'datefmt': "%d/%b/%Y %H:%M:%S"
+        },
+        'simple': {
+            'format': '[%(asctime)s] %(levelname)s %(message)s',
+            'datefmt': "%d/%b/%Y %H:%M:%S"
+        },
+    },
+    'handlers': {
+        'console_simple': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple'
+        },
+        'console_verbose': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose'
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console_verbose'],
+            'level': os.getenv('DJANGO_LOG_LEVEL', 'WARNING'),
+            'propagate': False,
+        },
+        'tethys': {
+            'handlers': ['console_verbose'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'tethys_apps': {
+            'handlers': ['console_verbose'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        '': {
+             'handlers': ['console_verbose'],
+             'level': 'ERROR',
+         }
+    },
+}
+
 cd /var/tethys_deploy/tethys/src
 python manage.py collectstatic
 
