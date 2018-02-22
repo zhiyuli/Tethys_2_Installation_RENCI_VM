@@ -67,7 +67,7 @@ uwsgi --chdir=/var/tethys_deploy/tethys/src/tethys_portal \
     --processes=5 \
     --uid=20025 \
     --gid=10000 \
-    --harakiri=20 \
+    --harakiri=600 \
     --max-requests=5000 \
     --vacuum \
     --chmod-socket \
@@ -156,7 +156,7 @@ sudo yum install supervisor
 sudo nano /etc/supervisord.d/tethys.ini
 
 [program:uwsgi]
-command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && uwsgi --chdir=/var/tethys_deploy/tethys/src/tethys_portal --module=wsgi --home /var/tethys_deploy/tethys/miniconda/envs/tethys --master --pidfile=/var/tethys_deploy/tethys/uwsgi/tethys-uwsgi-master.pid --socket=/var/tethys_deploy/tethys/uwsgi/nginx-uwsgi.socket --http=127.0.0.1:49153 --processes=5 --uid=20025 --gid=10000 --harakiri=20 --max-requests=5000 --vacuum  --chmod-socket --logger file:logfile=/var/tethys_deploy/tethys/uwsgi/logs/uwsgi.log,maxsize=10000000"
+command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && uwsgi --chdir=/var/tethys_deploy/tethys/src/tethys_portal --module=wsgi --home /var/tethys_deploy/tethys/miniconda/envs/tethys --master --pidfile=/var/tethys_deploy/tethys/uwsgi/tethys-uwsgi-master.pid --socket=/var/tethys_deploy/tethys/uwsgi/nginx-uwsgi.socket --http=127.0.0.1:49153 --processes=5 --uid=20025 --gid=10000 --harakiri=600 --max-requests=5000 --vacuum  --chmod-socket --logger file:logfile=/var/tethys_deploy/tethys/uwsgi/logs/uwsgi.log,maxsize=10000000"
 autostart=true
 autorestart=true
 redirect_stderr=false
