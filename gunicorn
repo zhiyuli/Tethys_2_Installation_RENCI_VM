@@ -1,0 +1,21 @@
+
+[program:gunicorn]
+command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && gunicorn tethys_portal.wsgi:application --name tethys-gunicorn --workers 4 --bind 127.0.0.1:49153 --timeout 600 --max-requests 2000 --env HOME=/home/hydroapp --log-level debug --access-logfile /var/tethys_deploy/tethys/gunicorn/access.log --log-file /var/tethys_deploy/tethys/gunicorn/error.log --capture-output"
+autostart=true
+autorestart=true
+redirect_stderr=false
+user=hydroapp
+stopasgroup=true
+priority=900
+
+
+proxy_set_header Host $host;
+ proxy_set_header X-Real-IP $remote_addr;
+ proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+ proxy_set_header X-Forwarded-Proto $scheme;
+ proxy_read_timeout 600s;
+ 
+ location / {        
+        proxy_pass http://127.0.0.1:49153;
+        proxy_redirect off;
+    }
