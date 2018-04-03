@@ -12,7 +12,9 @@ autostart=true
 redirect_stderr=false
 priority=1000
 
+
 [program:gunicorn]
+# version >=19.7.1
 command=bash -c "source /home/tethys/tethys/miniconda/bin/activate && source activate tethys && gunicorn tethys_portal.wsgi:application --name tethys-gunicorn --workers 8 --bind 127.0.0.1:49153 --timeout 600  --max-requests 0 --env HOME=/home/tethys --log-level debug --access-logfile /home/tethys/tethys/logs/gunicorn/access.log --log-file /home/tethys/tethys/logs/gunicorn/error.log --capture-output"
 autostart=true
 autorestart=true
@@ -73,5 +75,53 @@ server {
     location /geoserver {
         proxy_pass http://127.0.0.1:8181/geoserver;
     }
-
 }
+
+-------------------
+settings.py
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': "[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] %(message)s",
+            'datefmt': "%d/%b/%Y %H:%M:%S"
+        },
+        'simple': {
+            'format': '[%(asctime)s] %(levelname)s %(message)s',
+            'datefmt': "%d/%b/%Y %H:%M:%S"
+        },
+    },
+    'handlers': {
+        'console_simple': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple'
+        },
+        'console_verbose': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose'
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console_verbose'],
+            'level': os.getenv('DJANGO_LOG_LEVEL', 'WARNING'),
+            'propagate': False,
+        },
+        'tethys': {
+            'handlers': ['console_verbose'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'tethys_apps': {
+            'handlers': ['console_verbose'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        '': {
+             'handlers': ['console_verbose'],
+             'level': 'ERROR',
+         }
+    },
+}
+
