@@ -1,0 +1,77 @@
+supervisor
+
+[program:postgis-docker]
+command=docker start tethys_postgis
+autostart=true
+redirect_stderr=false
+priority=100
+
+[program:geoserver-docker]
+command=docker start tethys_geoserver
+autostart=true
+redirect_stderr=false
+priority=1000
+
+[program:gunicorn]
+command=bash -c "source /home/tethys/tethys/miniconda/bin/activate && source activate tethys && gunicorn tethys_portal.wsgi:application --name tethys-gunicorn --workers 8 --bind 127.0.0.1:49153 --timeout 600  --max-requests 0 --env HOME=/home/tethys --log-level debug --access-logfile /home/tethys/tethys/logs/gunicorn/access.log --log-file /home/tethys/tethys/logs/gunicorn/error.log --capture-output"
+autostart=true
+autorestart=true
+redirect_stderr=false
+user=tethys
+stopasgroup=true
+priority=900
+
+[program:nginx]
+command=/usr/sbin/nginx -g "daemon off;"
+priority=999
+autostart=true
+autorestart=true
+startsecs=10
+redirect_stderr=false
+stopasgroup=True
+
+-----------------------------------------------
+nginx
+
+# replace !!! with your domain
+# tethys_nginx.conf
+
+server {
+    # the port your site will be served on
+    listen      80;
+    # the domain name it will serve for
+    server_name XXXXXXX; # substitute your machine's IP address or FQDN
+    charset     utf-8;
+
+    # max upload size
+    client_max_body_size 2048M;   # adjust to taste
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 600s;
+    proxy_connect_timeout 600s;
+    proxy_send_timeout 600s;
+
+    # Tethys Workspaces
+    location /workspaces  {
+        internal;
+        alias /home/tethys/tethys/workspaces;  # your Tethys workspaces files - amend as required
+    }
+
+    location /static {
+        alias /home/tethys/tethys/static; # your Tethys static files - amend as required
+    }
+
+    # Finally, send all non-media requests to the Django server.
+    location / {
+        proxy_pass http://127.0.0.1:49153;
+        proxy_redirect off;
+    }
+
+    location /geoserver {
+        proxy_pass http://127.0.0.1:8181/geoserver;
+    }
+
+}
