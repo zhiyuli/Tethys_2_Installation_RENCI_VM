@@ -190,3 +190,4 @@ LOGGING = {
     },
 }
 
+DATA_UPLOAD_MAX_MEMORY_SIZE = 262144000 # 250MB https://docs.djangoproject.com/en/1.11/ref/settings/#data-upload-max-memory-size
