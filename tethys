@@ -35,14 +35,21 @@ stopasgroup=True
 -----------------------------------------------
 nginx
 
+# enable HTTPS and secure site
 # replace !!! with your domain
-# tethys_nginx.conf
+# sudo nano /etc/nginx/conf.d/tethys_nginx.conf
 
+
+# configuration of the server
 server {
+    #listen          80;
+    #server_name     tethys.byu.edu;
+    #return          301 https://$server_name$request_uri;
+    
     # the port your site will be served on
     listen      80;
     # the domain name it will serve for
-    server_name XXXXXXX; # substitute your machine's IP address or FQDN
+    server_name tethys.byu.edu; # substitute your machine's IP address or FQDN
     charset     utf-8;
 
     # max upload size
@@ -59,6 +66,64 @@ server {
     # Tethys Workspaces
     location /workspaces  {
         internal;
+        alias /home/tethys/tethys/workspaces;  # your Tethys workspaces files - amend as required
+    }
+
+    location /static {
+        alias /home/tethys/tethys/static; # your Tethys static files - amend as required
+    }
+
+    # Finally, send all non-media requests to the Django server.
+    location / {
+        proxy_pass http://127.0.0.1:49153;
+        proxy_redirect off;
+    }
+
+    location /geoserver {
+        proxy_pass http://127.0.0.1:8181/geoserver;
+    }
+}
+
+server {
+    # the port your site will be served on
+    listen      443 ssl;
+    # the domain name it will serve for
+    server_name tethys.byu.edu; # substitute your machine's IP address or FQDN
+    charset     utf-8;
+
+    # max upload size
+    client_max_body_size 2048M;   # adjust to taste
+    
+    ssl on;
+    ssl_certificate         /certs_in_use/tethys_byu_edu.crt;
+    ssl_certificate_key     /certs_in_use/tethys_byu_edu.key;
+    ssl_trusted_certificate  /certs_in_use/DigiCertCA.crt;
+
+    # see: https://www.digitalocean.com/community/tutorials/how-to-set-up-nginx-load-balancing-with-ssl-termination
+    # SSL safety rating A+ by https://www.ssllabs.com/ssltest/
+    ssl_session_cache shared:SSL:20m;
+    ssl_session_timeout 10m;
+
+    ssl_prefer_server_ciphers       on;
+    ssl_protocols                   TLSv1 TLSv1.1 TLSv1.2;
+    ssl_ciphers                     ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:ECDH+3DES:DH+3DES:RSA+AESGCM:RSA+AES:RSA+3DES:!aNULL:!MD5:!DSS;
+
+    add_header Strict-Transport-Security "max-age=31536000";
+
+    # Disallow access to every User-agent:
+    location /robots.txt {return 200 "User-agent: *\nDisallow: /\n";}
+    
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 600s;
+    proxy_connect_timeout 600s;
+    proxy_send_timeout 600s;
+    
+    # Tethys Workspaces
+    location /workspaces  {
+	internal;
         alias /home/tethys/tethys/workspaces;  # your Tethys workspaces files - amend as required
     }
 
