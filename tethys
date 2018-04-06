@@ -191,3 +191,24 @@ LOGGING = {
 }
 
 DATA_UPLOAD_MAX_MEMORY_SIZE = 262144000 # 250MB https://docs.djangoproject.com/en/1.11/ref/settings/#data-upload-max-memory-size
+
+
+
+--------------------
+# set PYTHONUNBUFFERED in env var to disable python buffer ("print" statement in code gets saved to log file at once)
+# https://docs.python.org/2/using/cmdline.html#envvar-PYTHONUNBUFFERED
+# http://gunicorn-docs.readthedocs.io/en/latest/settings.html#enable-stdio-inheritance
+# https://conda.io/docs/user-guide/tasks/manage-environments.html
+
+cd /home/tethys/tethys/miniconda/envs/tethys/etc/conda/activate.d
+nano python-gunicorn.sh
+#!/bin/bash
+# https://docs.python.org/2/using/cmdline.html#envvar-PYTHONUNBUFFERED
+# http://gunicorn-docs.readthedocs.io/en/latest/settings.html#enable-stdio-inheritance
+export PYTHONUNBUFFERED=TRUE
+
+cd /home/tethys/tethys/miniconda/envs/tethys/etc/conda/deactivate.d
+nano python-gunicorn.sh
+#!/bin/bash
+unset PYTHONUNBUFFERED
+
