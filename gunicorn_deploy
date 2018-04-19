@@ -39,6 +39,8 @@ bash install_tethys.sh -b release --tethys-home /var/tethys_deploy/tethys
 . ~/bashrch
 t
 tstartdb # start miniconda postgres db
+mkdir /var/tethys_deploy/tethys/static
+mkdir /var/tethys_deploy/tethys/workspaces
 tms
 
 # gunicorn
@@ -299,51 +301,7 @@ sudo systemctl status tethys_docker_postgis.service
 
 
 -------------------------------
-# change settings.py
-nano /var/tethys_deploy/tethys/src/tethys_portal/settings.py
 
-REST_FRAMEWORK = {
-    'NUM_PROXIES': 1,
-    'DEFAULT_THROTTLE_CLASSES': (
-        'rest_framework.throttling.AnonRateThrottle',
-        #'rest_framework.throttling.UserRateThrottle'
-    ),
-    'DEFAULT_THROTTLE_RATES': {
-        'anon': '120/min',
-        #'user': '60/min',
-        'GetDataWatermlRateThrottle_User': "60/min",
-        'GetDataWatermlRateThrottle_Anon': '3/min',
-        'SubsetWatershedApiRateThrottle_User': '60/min',
-        'SubsetWatershedApiRateThrottle_Anon': '3/min',
-    },
-    # 'DEFAULT_PERMISSION_CLASSES': (
-    #     'rest_framework.permissions.IsAuthenticated',
-    # ),
-    # 'DEFAULT_AUTHENTICATION_CLASSES': (
-    #     'rest_framework.authentication.TokenAuthentication',
-    # )
-}
-
-DATA_UPLOAD_MAX_MEMORY_SIZE = 262144000 # 250MB https://docs.djangoproject.com/en/1.11/ref/settings/#data-upload-max-memory-size
-
-AUTHENTICATION_BACKENDS = (
-    'tethys_services.backends.hydroshare.HydroShareOAuth2',
-#    'social_core.backends.linkedin.LinkedinOAuth2',
-#    'social_core.backends.google.GoogleOAuth2',
-#    'social_core.backends.facebook.FacebookOAuth2',
-    'django.contrib.auth.backends.ModelBackend',
-    'guardian.backends.ObjectPermissionBackend',
-)
-
-## HydroShare
-SOCIAL_AUTH_HYDROSHARE_KEY = 'XXXX'
-SOCIAL_AUTH_HYDROSHARE_SECRET = 'AAAAAAA'
-
-
-
-
-
------------------------
 #Setup celery + rabbitmq-server
 
 conda install -c conda-forge celery flower
@@ -432,4 +390,108 @@ systemctl enable rabbitmq-server (start on boot)
 # enable rabbitmq management plugin (port 15672)
 rabbitmq-plugins enable rabbitmq_management
 
+---------------------------------
+supervisor starts celery
+# add new entities to supervisord
+mkdir /var/tethys_deploy/logs
 
+nano /etc/supervisord.d/tethys.ini
+
+[program:tethys_celery]
+command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && celery -A tethys_portal.tethys_celery:app worker --loglevel=DEBUG -E"
+#environment=PATH="/var/tethys_deploy/tethys/miniconda/envs/tethys/bin/:%(ENV_PATH)s"
+user=hydroapp
+autostart=true
+autorestart=true
+redirect_stderr=true
+stdout_logfile=/var/tethys_deploy/logs/celery_error.log
+priority=800
+stopasgroup=True # required
+
+[program:celery-beat]
+command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && celery beat -A tethys_portal --loglevel=DEBUG --scheduler django_celery_beat.schedulers:DatabaseScheduler --pidfile='/var/tethys_deploy/celerybeat.pid'"
+user=hydroapp
+; see: https://stackoverflow.com/questions/9034709/incorrect-user-for-supervisord-celeryd
+environment=HOME="/home/hydroapp",USER="hydroapp"
+autorestart=true
+autostart=true
+stdout_logfile=/var/tethys_deploy/logs/celery_beat_error.log
+redirect_stderr=true
+priority=1001
+stopasgroup=True # required
+
+[program:flower]
+command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && celery flower -A tethys_portal --url_prefix=flower --basic_auth=admin:pass --xheaders=True"
+user=hydroapp
+stdout_logfile=/var/tethys_deploy/logs/flower_error.log
+redirect_stderr=true
+autostart=true
+autorestart=true
+priority=1002
+stopasgroup=True # required
+---------------------------------
+
+nginx proxy flower and rabbitmq-management
+
+    # flower
+    location /flower/ {
+        # see: http://flower.readthedocs.io/en/latest/config.html#url-prefix
+        rewrite ^/flower/(.*)$ /$1 break;
+        proxy_pass http://127.0.0.1:5555;
+        proxy_set_header Host $host;
+        #proxy_redirect off;
+    }
+    
+    # rabbitmq management plugin (UI)
+    # http://blog.jamesball.co.uk/2015/08/using-nginxapache-as-reverse-proxy-for.html
+    location /rabbitmq/ {
+      if ($request_uri ~* "/rabbitmq/(.*)") {
+        proxy_pass http://127.0.0.1:15672/$1;
+      }
+      proxy_pass http://127.0.0.1:15672;
+   }   
+   
+Goto /rabbitmq --> login with guest/guest --> create a new user with "admintrator" tag --> log out and log in with new user --> remove "administrator" tag from guest user.
+
+
+--------------
+
+# change settings.py
+nano /var/tethys_deploy/tethys/src/tethys_portal/settings.py
+
+REST_FRAMEWORK = {
+    'NUM_PROXIES': 1,
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        #'rest_framework.throttling.UserRateThrottle'
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '120/min',
+        #'user': '60/min',
+        'GetDataWatermlRateThrottle_User': "60/min",
+        'GetDataWatermlRateThrottle_Anon': '3/min',
+        'SubsetWatershedApiRateThrottle_User': '60/min',
+        'SubsetWatershedApiRateThrottle_Anon': '3/min',
+    },
+    # 'DEFAULT_PERMISSION_CLASSES': (
+    #     'rest_framework.permissions.IsAuthenticated',
+    # ),
+    # 'DEFAULT_AUTHENTICATION_CLASSES': (
+    #     'rest_framework.authentication.TokenAuthentication',
+    # )
+}
+
+DATA_UPLOAD_MAX_MEMORY_SIZE = 262144000 # 250MB https://docs.djangoproject.com/en/1.11/ref/settings/#data-upload-max-memory-size
+
+AUTHENTICATION_BACKENDS = (
+    'tethys_services.backends.hydroshare.HydroShareOAuth2',
+#    'social_core.backends.linkedin.LinkedinOAuth2',
+#    'social_core.backends.google.GoogleOAuth2',
+#    'social_core.backends.facebook.FacebookOAuth2',
+    'django.contrib.auth.backends.ModelBackend',
+    'guardian.backends.ObjectPermissionBackend',
+)
+
+## HydroShare
+SOCIAL_AUTH_HYDROSHARE_KEY = 'XXXX'
+SOCIAL_AUTH_HYDROSHARE_SECRET = 'AAAAAAA'
