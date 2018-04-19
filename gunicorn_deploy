@@ -19,6 +19,10 @@ OAuth login for HydroShare enabled
 logs: /var/tethys_deploy/gunicorn
       /var/log/nginx/
       /var/log/supervisord/
+      
+celery
+rabbitmq & management
+flower
 
 
 Instructions:
@@ -233,8 +237,9 @@ server {
 }
 
 sudo service nginx restart
-try to access hs-apps-dev.hydroshare.org in browser
+#try to access hs-apps-dev.hydroshare.org in browser
 sudo service nginx stop
+sudo service nginx disable
 
 -------------------------------------------------
 # auto start everything on boot (nginx, gunicorn, docker containers)
