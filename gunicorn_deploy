@@ -1,0 +1,367 @@
+RENCI VM (CentOS 7) ENV
+selinux disabled
+iptables on with 80 and 433 closed
+docker-engine and docker-compose are installed
+a non-sudoer user: hydroapp:"service accounts"
+domain: hs-apps.hydroshare.org
+
+What you will get:
+Tethys 2 installed by user hydroapp with miniconda env at /var/tethys_deploy
+gunicorn >=19.7.1 installed by Tethys minicoda
+nginx supervisord installed by yum
+linkage between nginx and gunicorn: ip
+gunicorn and nginx managed by supervisord
+supervisord starts on boot
+Tethys 2 uses dockerized postgres db (tethys_postgis)
+tethys_postgis container auto starts on boot
+https is enabled on nginx
+OAuth login for HydroShare enabled
+logs: /var/tethys_deploy/gunicorn
+      /var/log/nginx/
+      /var/log/supervisord/
+
+
+Instructions:
+
+sudo yum update
+sudo yum install lynx
+sudo yum install nano
+
+sudo mkdir /var/tethys_deploy
+sudo chown hydroapp:"service accounts" /var/tethys_deploy
+
+
+sudo su - hydroapp
+id
+cd /var/tethys_deploy
+wget https://raw.githubusercontent.com/tethysplatform/tethys/release/scripts/install_tethys.sh
+bash install_tethys.sh -b release --tethys-home /var/tethys_deploy/tethys
+. ~/bashrch
+t
+tstartdb # start miniconda postgres db
+tms
+
+# gunicorn
+conda install gunicorn
+mkdir -p /var/tethys_deploy/tethys/gunicorn
+
+# create gunicorn config file
+nano /var/tethys_deploy/tethys/gunicorn/gunicorn_config.py
+#gunicorn_config.py
+
+bind = '127.0.0.1:49153'
+timeout = 600
+max_requests = 2000
+name = "tethys-gunicorn"
+workers = 4
+raw_env = [
+          'HOME=/home/hydroapp'
+          ]
+log_level = 'debug'
+accesslog = '/var/tethys_deploy/tethys/gunicorn/access.log'
+errorlog = '/var/tethys_deploy/tethys/gunicorn/error.log'
+capture_output = True
+access_log_format = 'process%(p)s XFF%({X-Forwarded-For}i)s; %(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'
+
+# start gunicorn server manually
+gunicorn -c /var/tethys_deploy/tethys/gunicorn/gunicorn_config.py tethys_portal.wsgi:application
+
+# try opening site in text browser
+lynx 127.0.0.1:49153
+-------------------------------------------------------------
+
+
+# install tethys_postgis container
+tethys docker init -c postgis
+# nano settings to change db port (5435) and user (tethys_default)
+sudo nano /var/tethys_deploy/tethys/src/tethys_portal/settings.py
+docker ps
+tethys docker start tethys_postgis
+# connection for tethys_postgis container
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql_psycopg2',
+        'NAME': 'tethys_default',
+        'USER': 'tethys_default',
+        'PASSWORD': 'XXXX',
+        'HOST': '127.0.0.1',
+        'PORT': '5435'
+    }
+}
+python manage.py migrate
+python manage.py createsuperuser
+
+# start gunicorn server manually
+gunicorn -c /var/tethys_deploy/tethys/gunicorn/gunicorn_config.py tethys_portal.wsgi:application
+
+# try opening site in text browser
+lynx 127.0.0.1:49153
+
+
+-------------------------------------------------
+# config iptables
+sudo iptables -L
+sudo iptables -I INPUT -p tcp -m tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT -p tcp -m tcp --dport 443 -j ACCEPT
+sudo service iptables save
+sudo service iptables restart
+sudo service docker restart
+sudo iptables -L
+tethys docker start tethys_postgis
+
+sudo yum install nginx
+sudo nano /etc/nginx/conf.d/tethys_nginx.conf
+
+
+# configuration of the server
+server {
+    listen          80;
+    server_name     hs-apps.hydroshare.org;
+    return          301 https://$server_name$request_uri;
+}
+
+server {
+    # the port your site will be served on
+    listen      443 ssl;
+    # the domain name it will serve for
+    server_name hs-apps.hydroshare.org; # substitute your machine's IP address or FQDN
+    charset     utf-8;
+
+    # max upload size
+    client_max_body_size 2048M;   # adjust to taste
+    
+    ssl on;
+    ssl_certificate         /opt/hs-certs/server.crt;
+    ssl_certificate_key     /opt/hs-certs/server.key;
+    # ssl_trusted_certificate  /opt/hs-certs/cert-chain.crt;
+
+    # see: https://www.digitalocean.com/community/tutorials/how-to-set-up-nginx-load-balancing-with-ssl-termination
+    # SSL safety rating A+ by https://www.ssllabs.com/ssltest/
+    ssl_session_cache shared:SSL:20m;
+    ssl_session_timeout 10m;
+
+    ssl_prefer_server_ciphers       on;
+    ssl_protocols                   TLSv1 TLSv1.1 TLSv1.2;
+    ssl_ciphers                     ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:ECDH+3DES:DH+3DES:RSA+AESGCM:RSA+AES:RSA+3DES:!aNULL:!MD5:!DSS;
+
+    add_header Strict-Transport-Security "max-age=31536000";
+
+    # Disallow access to every User-agent:
+    location /robots.txt {return 200 "User-agent: *\nDisallow: /\n";}
+    
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    
+    # Tethys Workspaces
+    location /workspaces  {
+	internal;
+        alias /var/tethys_deploy/tethys/workspaces;  # your Tethys workspaces files - amend as required
+    }
+
+    location /static {
+        alias /var/tethys_deploy/tethys/static; # your Tethys static files - amend as required
+    }
+
+    # Finally, send all non-media requests to the Django server.
+   location / {        
+        proxy_pass http://127.0.0.1:49153;
+        proxy_redirect off;
+    }
+}
+
+
+
+-------------------------------------------------
+# add new entities to supervisord
+mkdir /var/tethys_deploy/logs
+
+
+-------------------------------
+# change settings.py
+nano /var/tethys_deploy/tethys/src/tethys_portal/settings.py
+allowed_hosts=["hs-apps.hydroshare.org", "127.0.0.1", "<SERVER REAL IP>"]
+generate new django secret
+DEBUG=False
+uncomment static dir
+uncomment workspace
+
+#change logging settting:
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': "[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] %(message)s",
+            'datefmt': "%d/%b/%Y %H:%M:%S"
+        },
+        'simple': {
+            'format': '[%(asctime)s] %(levelname)s %(message)s',
+            'datefmt': "%d/%b/%Y %H:%M:%S"
+        },
+    },
+    'handlers': {
+        'console_simple': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple'
+        },
+        'console_verbose': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose'
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console_verbose'],
+            'level': os.getenv('DJANGO_LOG_LEVEL', 'WARNING'),
+            'propagate': False,
+        },
+        'tethys': {
+            'handlers': ['console_verbose'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'tethys_apps': {
+            'handlers': ['console_verbose'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        '': {
+             'handlers': ['console_verbose'],
+             'level': 'ERROR',
+         }
+    },
+}
+
+REST_FRAMEWORK = {
+    'NUM_PROXIES': 1,
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        #'rest_framework.throttling.UserRateThrottle'
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '120/min',
+        #'user': '60/min',
+        'GetDataWatermlRateThrottle_User': "60/min",
+        'GetDataWatermlRateThrottle_Anon': '3/min',
+        'SubsetWatershedApiRateThrottle_User': '60/min',
+        'SubsetWatershedApiRateThrottle_Anon': '3/min',
+    },
+    # 'DEFAULT_PERMISSION_CLASSES': (
+    #     'rest_framework.permissions.IsAuthenticated',
+    # ),
+    # 'DEFAULT_AUTHENTICATION_CLASSES': (
+    #     'rest_framework.authentication.TokenAuthentication',
+    # )
+}
+
+DATA_UPLOAD_MAX_MEMORY_SIZE = 262144000 # 250MB https://docs.djangoproject.com/en/1.11/ref/settings/#data-upload-max-memory-size
+
+AUTHENTICATION_BACKENDS = (
+    'tethys_services.backends.hydroshare.HydroShareOAuth2',
+#    'social_core.backends.linkedin.LinkedinOAuth2',
+#    'social_core.backends.google.GoogleOAuth2',
+#    'social_core.backends.facebook.FacebookOAuth2',
+    'django.contrib.auth.backends.ModelBackend',
+    'guardian.backends.ObjectPermissionBackend',
+)
+
+## HydroShare
+SOCIAL_AUTH_HYDROSHARE_KEY = 'XXXX'
+SOCIAL_AUTH_HYDROSHARE_SECRET = 'AAAAAAA'
+
+
+
+
+
+-----------------------
+#Setup celery + rabbitmq-server
+
+conda install -c conda-forge celery flower
+pip install django-celery-results django-celery-beat
+cd /var/tethys_deploy/tethys/src/tethys_portal
+nano tethys_celery.py
+
+from __future__ import absolute_import, unicode_literals
+import os
+from celery import Celery
+from celery import shared_task
+
+# set the default Django settings module for the 'celery' program.
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tethys_portal.settings')
+
+app = Celery('tethys_celery')
+
+# Using a string here means the worker doesn't have to serialize
+# the configuration object to child processes.
+# - namespace='CELERY' means all celery-related configuration keys
+#   should have a `CELERY_` prefix.
+
+## celery 4.1
+app.config_from_object('django.conf:settings', namespace='CELERY')
+
+# Set result db record's life span (in seconds).
+# See: https://github.com/celery/celery/issues/4050
+# This setting can be checked by  
+#  from tethys_portal import tethys_celery
+#  tethys_celery.app.conf["result_expires"]
+# and will be used in Celery at 
+# https://github.com/celery/celery/blob/master/celery/backends/base.py#L284
+app.conf.result_expires = 30 * 24 * 3600  # 30 days 
+
+# Load task modules from all registered Django app configs.
+app.autodiscover_tasks()
+
+
+@app.task(bind=True)
+def debug_task(self):
+    print('Request: {0!r}'.format(self.request))
+
+
+@shared_task
+def add(x, y):
+    return x + y
+
+
+@shared_task
+def mul(x, y):
+    return x * y
+
+
+@shared_task
+def xsum(numbers):
+    return sum(numbers)
+
+    
+# nano __init__.py
+from __future__ import absolute_import, unicode_literals
+
+# This will make sure the app is always imported when
+# Django starts so that shared_task will use this app.
+from .tethys_celery import app as celery_app
+
+__all__ = ['celery_app']
+
+# nano settings.py
+# add new apps
+    'django_celery_results',
+    'django_celery_beat',
+
+# Celery settings
+BROKER_URL = 'amqp://myuser:mypassword@localhost:5672/myvhost'
+CELERY_RESULT_BACKEND = 'django-db'
+# See issue: https://github.com/celery/celery/issues/4050
+#result_expires = 3600 * 24 * 10    # Set result db record's life span to 10 days (in seconds). This setting does not work. A workaround is set in tethys_portal/tethys_celery.py
+CELERY_TRACK_STARTED = True  # report "job started" status
+
+python manage.py migrate
+python manage.py collectstatic
+
+yum install rabbitmq-server
+systemctl start rabbitmq-server
+systemctl enable rabbitmq-server (start on boot)
+# enable rabbitmq management plugin (port 15672)
+rabbitmq-plugins enable rabbitmq_management
+
+
