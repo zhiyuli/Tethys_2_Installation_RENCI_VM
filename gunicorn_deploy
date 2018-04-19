@@ -63,6 +63,60 @@ errorlog = '/var/tethys_deploy/tethys/gunicorn/error.log'
 capture_output = True
 access_log_format = 'process%(p)s XFF%({X-Forwarded-For}i)s; %(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'
 
+# settings.py
+allowed_hosts=["hs-apps.hydroshare.org", "127.0.0.1", "<SERVER REAL IP>"]
+generate new django secret
+DEBUG=False
+uncomment static dir
+uncomment workspace
+
+#change logging settting:
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': "[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] %(message)s",
+            'datefmt': "%d/%b/%Y %H:%M:%S"
+        },
+        'simple': {
+            'format': '[%(asctime)s] %(levelname)s %(message)s',
+            'datefmt': "%d/%b/%Y %H:%M:%S"
+        },
+    },
+    'handlers': {
+        'console_simple': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple'
+        },
+        'console_verbose': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose'
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console_verbose'],
+            'level': os.getenv('DJANGO_LOG_LEVEL', 'WARNING'),
+            'propagate': False,
+        },
+        'tethys': {
+            'handlers': ['console_verbose'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'tethys_apps': {
+            'handlers': ['console_verbose'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        '': {
+             'handlers': ['console_verbose'],
+             'level': 'ERROR',
+         }
+    },
+}
+
 # start gunicorn server manually
 gunicorn -c /var/tethys_deploy/tethys/gunicorn/gunicorn_config.py tethys_portal.wsgi:application
 
@@ -77,6 +131,8 @@ tethys docker init -c postgis
 sudo nano /var/tethys_deploy/tethys/src/tethys_portal/settings.py
 docker ps
 tethys docker start tethys_postgis
+
+# settings.py
 # connection for tethys_postgis container
 DATABASES = {
     'default': {
@@ -90,6 +146,7 @@ DATABASES = {
 }
 python manage.py migrate
 python manage.py createsuperuser
+python manage.py collectstatic
 
 # start gunicorn server manually
 gunicorn -c /var/tethys_deploy/tethys/gunicorn/gunicorn_config.py tethys_portal.wsgi:application
@@ -109,6 +166,8 @@ sudo service docker restart
 sudo iptables -L
 tethys docker start tethys_postgis
 
+
+----------------------------------------
 sudo yum install nginx
 sudo nano /etc/nginx/conf.d/tethys_nginx.conf
 
@@ -171,68 +230,77 @@ server {
     }
 }
 
-
+sudo service nginx restart
+try to access hs-apps-dev.hydroshare.org in browser
+sudo service nginx stop
 
 -------------------------------------------------
-# add new entities to supervisord
-mkdir /var/tethys_deploy/logs
+# auto start everything on boot (nginx, gunicorn, docker containers)
+# supervisord (manage uwsgi and nginx)
+sudo yum install supervisor
+sudo nano /etc/supervisord.d/tethys.ini
+
+[program:gunicorn]
+command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && gunicorn -c /var/tethys_deploy/tethys/gunicorn/gunicorn_config.py tethys_portal.wsgi:application"
+autostart=true
+autorestart=true
+redirect_stderr=false
+user=hydroapp
+#startsecs=10
+#stopsignal=QUIT
+stopasgroup=true
+priority=900
+
+
+[program:nginx]
+command=/usr/sbin/nginx -g "daemon off;"
+priority=999
+autostart=true
+autorestart=true
+startsecs=10
+redirect_stderr=false
+stopasgroup=True
+
+# stop uwsgi and nginx and start supervisord
+sudo service supervisord start
+Try to access hs-app.hydroshare.org
+
+# set supervisord to start on boot
+sudo service supervisord stop
+
+(sudo chkconfig supervisord on)
+sudo systemctl status supervisord
+sudo systemctl start supervisord
+sudo systemctl enable supervisord
+
+
+# set tethys contianer postgis to start on boot
+# make sure docker service auto start on boot
+sudo systemctl enable docker.service
+sudo systemctl status docker.service
+
+sudo nano /etc/systemd/system/tethys_docker_postgis.service
+[Unit]
+Wants=docker.service
+After=docker.service
+ 
+[Service]
+RemainAfterExit=yes
+ExecStart=/usr/bin/docker start tethys_postgis
+ExecStop=/usr/bin/docker stop tethys_postgis
+ 
+[Install]
+WantedBy=multi-user.target
+
+docker stop tethys_postgis
+sudo systemctl start tethys_docker_postgis.service
+sudo systemctl enable tethys_docker_postgis.service
+sudo systemctl status tethys_docker_postgis.service
 
 
 -------------------------------
 # change settings.py
 nano /var/tethys_deploy/tethys/src/tethys_portal/settings.py
-allowed_hosts=["hs-apps.hydroshare.org", "127.0.0.1", "<SERVER REAL IP>"]
-generate new django secret
-DEBUG=False
-uncomment static dir
-uncomment workspace
-
-#change logging settting:
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': "[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] %(message)s",
-            'datefmt': "%d/%b/%Y %H:%M:%S"
-        },
-        'simple': {
-            'format': '[%(asctime)s] %(levelname)s %(message)s',
-            'datefmt': "%d/%b/%Y %H:%M:%S"
-        },
-    },
-    'handlers': {
-        'console_simple': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'simple'
-        },
-        'console_verbose': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose'
-        },
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console_verbose'],
-            'level': os.getenv('DJANGO_LOG_LEVEL', 'WARNING'),
-            'propagate': False,
-        },
-        'tethys': {
-            'handlers': ['console_verbose'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'tethys_apps': {
-            'handlers': ['console_verbose'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-        '': {
-             'handlers': ['console_verbose'],
-             'level': 'ERROR',
-         }
-    },
-}
 
 REST_FRAMEWORK = {
     'NUM_PROXIES': 1,
