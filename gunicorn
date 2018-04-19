@@ -1,6 +1,9 @@
 
+# supvisord
+
 [program:gunicorn]
-command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && gunicorn tethys_portal.wsgi:application --name tethys-gunicorn --workers 4 --bind 127.0.0.1:49153 --timeout 600 --max-requests 2000 --env HOME=/home/hydroapp --log-level debug --access-logfile /var/tethys_deploy/tethys/gunicorn/access.log --log-file /var/tethys_deploy/tethys/gunicorn/error.log --capture-output"
+#command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && gunicorn tethys_portal.wsgi:application --name tethys-gunicorn --workers 4 --bind 127.0.0.1:49153 --timeout 600 --max-requests 2000 --env HOME=/home/hydroapp --log-level debug --access-logfile /var/tethys_deploy/tethys/gunicorn/access.log --log-file /var/tethys_deploy/tethys/gunicorn/error.log --capture-output"
+command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && gunicorn -c /var/tethys_deploy/tethys/gunicorn/gunicorn_config.py tethys_portal.wsgi:application"
 autostart=true
 autorestart=true
 redirect_stderr=false
@@ -8,8 +11,27 @@ user=hydroapp
 stopasgroup=true
 priority=900
 
+#gunicorn_config.py
 
-proxy_set_header Host $host;
+bind = '127.0.0.1:49153'
+timeout = 600
+max_requests = 2000
+name = "tethys-gunicorn"
+workers = 4
+raw_env = [
+          'HOME=/home/hydroapp'
+          ]
+log_level = 'debug'
+accesslog = '/var/tethys_deploy/tethys/gunicorn/access.log'
+errorlog = '/var/tethys_deploy/tethys/gunicorn/error.log'
+capture_output = True
+access_log_format = 'process%(p)s XFF%({X-Forwarded-For}i)s; %(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'
+
+
+
+#Nginx
+
+ proxy_set_header Host $host;
  proxy_set_header X-Real-IP $remote_addr;
  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
  proxy_set_header X-Forwarded-Proto $scheme;
