@@ -1,0 +1,16 @@
+Django REST Frame Doc says using django default cache type 'LocMemCache' is OK for rate limiting feature.
+https://github.com/encode/django-rest-framework/blob/0b6a5e568ddd4a03f4df3b22db8facb8c8343e52/docs/api-guide/throttling.md
+
+But in production, Gunicorn preforks multiple workers (processes) and only one of them is assigned to handle a specific incoming request alone. Since DRF saves number of requests in cache, and LocMemCache type cache is not safe in multi-processing env (Warnings in https://docs.djangoproject.com/en/2.0/topics/http/sessions/#using-cached-sessions), each gunicorn worker counts number of incoming requests separately and enforce thier own rate limiting. 
+
+A solution is to use memcached cache as Django "default" cache type and Django REST API Rate Limiting uses this "default" cache type automatically. 
+
+
+
+1) install memcached
+https://www.liquidweb.com/kb/how-to-install-memcached-on-centos-7/
+
+2) install python-memcached into conda env
+
+3) settings.py
+https://docs.djangoproject.com/en/2.0/topics/cache/
