@@ -101,14 +101,14 @@ nano /etc/supervisord.d/tethys.ini
 
 [program:tethys_celery]
 command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && celery -A tethys_portal.tethys_celery:app worker --loglevel=DEBUG -E"
-#environment=PATH="/var/tethys_deploy/tethys/miniconda/envs/tethys/bin/:%(ENV_PATH)s"
+;environment=PATH="/var/tethys_deploy/tethys/miniconda/envs/tethys/bin/:%(ENV_PATH)s"
 user=hydroapp
 autostart=true
 autorestart=true
 redirect_stderr=true
 stdout_logfile=/var/tethys_deploy/logs/celery_error.log
 priority=800
-stopasgroup=True # required (but may cuase issue on some ubuntu)
+stopasgroup=true ; required (but may cuase issue on some ubuntu)
 
 [program:celery-beat]
 command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && celery beat -A tethys_portal --loglevel=DEBUG --scheduler django_celery_beat.schedulers:DatabaseScheduler --pidfile='/var/tethys_deploy/celerybeat.pid'"
@@ -120,7 +120,7 @@ autostart=true
 stdout_logfile=/var/tethys_deploy/logs/celery_beat_error.log
 redirect_stderr=true
 priority=1001
-stopasgroup=True # required (but may cuase issue on some ubuntu)
+stopasgroup=true ; required (but may cuase issue on some ubuntu)
 
 [program:flower]
 command=bash -c "source /var/tethys_deploy/tethys/miniconda/bin/activate && source activate tethys && celery flower -A tethys_portal --url_prefix=flower --basic_auth=admin:pass --xheaders=True"
@@ -130,7 +130,7 @@ redirect_stderr=true
 autostart=true
 autorestart=true
 priority=1002
-stopasgroup=True # required (but may cuase issue on some ubuntu)
+stopasgroup=true ; required (but may cuase issue on some ubuntu)
 
 ## not being used
 #[program:rabbitmq-server]
