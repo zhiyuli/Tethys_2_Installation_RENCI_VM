@@ -7,7 +7,7 @@ rabbitmq-server yum, systemctl service
 
 #Setup celery + rabbitmq-server
 
-conda install -c conda-forge celery flower
+conda install -c conda-forge tornado=5.1.1 celery flower
 pip install django-celery-results django-celery-beat
 cd /var/tethys_deploy/tethys/src/tethys_portal
 nano tethys_celery.py
